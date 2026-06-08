@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>⚡ 双人坦克大战 - 局域网联机版</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#0a0a1a; font-family:'Segoe UI',system-ui,sans-serif;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:100vh; color:#fff; overflow:hidden;
+}
+canvas#bg { position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:0; }
+
+/* === LOBBY === */
+#lobby {
+  position:relative; z-index:10; text-align:center;
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+  border-radius:20px; padding:48px 56px; backdrop-filter:blur(12px);
+  box-shadow:0 0 80px rgba(79,195,247,0.08);
+  transition:opacity 0.4s, transform 0.4s;
+}
+#lobby.hidden { opacity:0; transform:scale(0.95); pointer-events:none; position:absolute; }
+#lobby h1 {
+  font-size:42px; margin-bottom:6px;
+  background:linear-gradient(135deg,#4fc3f7,#ff7043);
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+}
+#lobby .tag { color:rgba(255,255,255,0.35); font-size:13px; margin-bottom:32px; letter-spacing:2px; }
+.connect-box {
+  display:flex; gap:10px; margin-bottom:20px; justify-content:center;
+}
+.connect-box input {
+  background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15);
+  border-radius:10px; padding:14px 20px; color:#fff; font-size:16px;
+  width:260px; outline:none; transition:border-color 0.2s;
+}
+.connect-box input:focus { border-color:#4fc3f7; }
+.connect-box input::placeholder { color:rgba(255,255,255,0.25); }
+.btn {
+  background:linear-gradient(135deg,#4fc3f7,#2196f3); border:none; color:#fff;
+  padding:14px 32px; border-radius:10px; font-size:16px; font-weight:700;
+  cursor:pointer; letter-spacing:1px; transition:transform 0.15s,box-shadow 0.15s;
+  box-shadow:0 4px 20px rgba(33,150,243,0.3);
+}
+.btn:hover { transform:translateY(-2px); box-shadow:0 6px 30px rgba(33,150,243,0.45); }
+.btn:active { transform:translateY(0); }
+.btn:disabled { opacity:0.5; cursor:default; transform:none; box-shadow:none; }
+.btn.red { background:linear-gradient(135deg,#ff7043,#f4511e); box-shadow:0 4px 20px rgba(244,81,30,0.3); }
+.btn.red:hover { box-shadow:0 6px 30px rgba(244,81,30,0.45); }
+.status {
+  margin-top:18px; font-size:14px; color:rgba(255,255,255,0.5);
+  min-height:24px; transition:color 0.2s;
+}
+.status.err { color:#ef5350; }
+.status.ok { color:#66bb6a; }
+.slot-info {
+  display:flex; gap:24px; justify-content:center; margin-top:24px;
+}
+.slot {
+  background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px; padding:16px 28px; min-width:120px;
+}
+.slot .dot { width:10px; height:10px; border-radius:50%; display:inline-block; margin-right:8px; }
+.slot .dot.off { background:#555; }
+.slot .dot.on { background:#66bb6a; box-shadow:0 0 8px #66bb6a; }
+.slot .label { font-size:13px; font-weight:700; letter-spacing:1px; }
+.slot.s1 .label { color:#4fc3f7; }
+.slot.s2 .label { color:#ff7043; }
+
+/* === GAME UI === */
+#gameUI {
+  position:relative; z-index:10; display:none;
+  flex-direction:column; align-items:center;
+}
+#gameUI.show { display:flex; }
+#header { display:flex; align-items:center; gap:40px; margin-bottom:12px; }
+.hud {
+  display:flex; align-items:center; gap:12px;
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08);
+  border-radius:12px; padding:8px 20px;
+}
+.hud .icon { font-size:28px; }
+.hud .info { display:flex; flex-direction:column; gap:4px; }
+.hud .name { font-size:13px; font-weight:700; letter-spacing:1px; }
+.hud.p1 .name { color:#4fc3f7; }
+.hud.p2 .name { color:#ff7043; }
+.hp-bar { width:160px; height:10px; background:rgba(255,255,255,0.08); border-radius:5px; overflow:hidden; }
+.hp-fill { height:100%; border-radius:5px; transition:width 0.3s; }
+.p1 .hp-fill { background:linear-gradient(90deg,#4fc3f7,#29b6f6); }
+.p2 .hp-fill { background:linear-gradient(90deg,#ff7043,#f4511e); }
+.score { font-size:20px; font-weight:900; font-variant-numeric:tabular-nums; }
+#gameCanvas {
+  border:2px solid rgba(255,255,255,0.12);
+  border-radius:8px;
+  box-shadow:0 0 60px rgba(79,195,247,0.1),0 0 120px rgba(255,112,67,0.05);
+}
+#controls {
+  margin-top:14px; font-size:12px; color:rgba(255,255,255,0.35); letter-spacing:0.5px;
+}
+.key {
+  display:inline-block; background:rgba(255,255,255,0.08);
+  border:1px solid rgba(255,255,255,0.15); border-radius:4px;
+  padding:1px 6px; font-size:11px; color:rgba(255,255,255,0.5); margin:0 2px;
+}
+#roundMsg {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-size:36px; font-weight:900; pointer-events:none;
+  opacity:0; transition:opacity 0.3s; z-index:50; text-shadow:0 0 30px rgba(0,0,0,0.8);
+}
+#roundMsg.show { opacity:1; }
+#ping { position:absolute; top:8px; right:12px; font-size:11px; color:rgba(255,255,255,0.25); z-index:20; }
+.server-item {
+  background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.1);
+  border-radius:10px; padding:12px 18px; margin-bottom:8px; cursor:pointer;
+  display:flex; justify-content:space-between; align-items:center;
+  transition:all 0.2s;
+}
+.server-item:hover { background:rgba(79,195,247,0.1); border-color:rgba(79,195,247,0.3); }
+.server-item .srv-ip { color:#4fc3f7; font-weight:700; font-size:14px; }
+.server-item .srv-info { color:rgba(255,255,255,0.4); font-size:12px; }
+.server-item .srv-status { font-size:11px; padding:3px 10px; border-radius:6px; }
+.server-item .srv-status.available { background:rgba(102,187,106,0.2); color:#66bb6a; }
+.server-item .srv-status.full { background:rgba(239,83,80,0.2); color:#ef5350; }
+.scan-progress { font-size:12px; color:rgba(255,255,255,0.3); margin-top:8px; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<!-- LOBBY -->
+<div id="lobby">
+  <h1>⚡ 双人坦克大战</h1>
+  <div class="tag">LAN MULTIPLAYER · 局域网联机</div>
+  <div class="connect-box">
+    <input id="ipInput" type="text" placeholder="服务器 IP 地址（如 192.168.1.5）" spellcheck="false" autocomplete="off">
+    <button class="btn" id="connectBtn">连 接</button>
+  </div>
+  <div style="margin-bottom:20px;">
+    <button class="btn red" id="scanBtn" style="padding:10px 24px;font-size:14px;">🔍 扫描局域网服务器</button>
+  </div>
+  <div id="serverList" style="display:none;margin-bottom:20px;text-align:left;">
+    <div style="font-size:13px;color:rgba(255,255,255,0.5);margin-bottom:10px;letter-spacing:1px;">发现的服务器：</div>
+    <div id="serverItems"></div>
+  </div>
+  <div class="status" id="status"></div>
+  <div class="slot-info">
+    <div class="slot s1"><span class="dot off" id="dot1"></span><span class="label">🔵 P1</span></div>
+    <div class="slot s2"><span class="dot off" id="dot2"></span><span class="label">🔴 P2</span></div>
+  </div>
+</div>
+
+<!-- GAME -->
+<div id="gameUI">
+  <div id="header">
+    <div class="hud p1">
+      <div class="icon">🔵</div>
+      <div class="info">
+        <div class="name" id="p1name">PLAYER 1</div>
+        <div class="hp-bar"><div class="hp-fill" id="hp1" style="width:100%"></div></div>
+      </div>
+      <div class="score" id="score1">0</div>
+    </div>
+    <div class="hud p2">
+      <div class="icon">🔴</div>
+      <div class="info">
+        <div class="name" id="p2name">PLAYER 2</div>
+        <div class="hp-bar"><div class="hp-fill" id="hp2" style="width:100%"></div></div>
+      </div>
+      <div class="score" id="score2">0</div>
+    </div>
+  </div>
+  <canvas id="gameCanvas" width="900" height="600"></canvas>
+  <div id="controls">
+    <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> 移动 ·
+    <span class="key">Space</span> 射击 ·
+    <span class="key">R</span> 重新开始
+  </div>
+  <div id="roundMsg"></div>
+  <div id="ping"></div>
+</div>
+
+<script>
+// ============ BG PARTICLES ============
+const bgC = document.getElementById('bg');
+const bgX = bgC.getContext('2d');
+let bgP = [];
+function resizeBg() {
+  bgC.width = innerWidth; bgC.height = innerHeight;
+  bgP = Array.from({length:50},()=>({
+    x:Math.random()*bgC.width, y:Math.random()*bgC.height,
+    r:Math.random()*2+0.5, dx:(Math.random()-0.5)*0.2, dy:(Math.random()-0.5)*0.2,
+    a:Math.random()*0.2+0.03
+  }));
+}
+resizeBg(); window.addEventListener('resize',resizeBg);
+function drawBg() {
+  bgX.clearRect(0,0,bgC.width,bgC.height);
+  bgP.forEach(p=>{
+    p.x+=p.dx;p.y+=p.dy;
+    if(p.x<0)p.x=bgC.width;if(p.x>bgC.width)p.x=0;
+    if(p.y<0)p.y=bgC.height;if(p.y>bgC.height)p.y=0;
+    bgX.beginPath();bgX.arc(p.x,p.y,p.r,0,Math.PI*2);
+    bgX.fillStyle=`rgba(255,255,255,${p.a})`;bgX.fill();
+  });
+  requestAnimationFrame(drawBg);
+}
+drawBg();
+
+// ============ GAME CLIENT ============
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const W = 900, H = 600;
+
+const lobby = document.getElementById('lobby');
+const gameUI = document.getElementById('gameUI');
+const statusEl = document.getElementById('status');
+const ipInput = document.getElementById('ipInput');
+const connectBtn = document.getElementById('connectBtn');
+const roundMsg = document.getElementById('roundMsg');
+const pingEl = document.getElementById('ping');
+
+let ws = null;
+let mySlot = 0;
+let obstacles = [];
+let remoteState = null;
+let lastTick = 0;
+let interpState = { t1:{}, t2:{} };
+let particles = [];
+let keys = {};
+let lastInputSend = 0;
+let pingStart = 0;
+let lastPing = 0;
+let roundMsgTimer = null;
+let playersOnline = 0;
+
+// Auto-fill IP from URL
+const urlIP = location.hostname;
+if (urlIP && urlIP !== 'localhost' && urlIP !== '127.0.0.1') {
+  ipInput.value = urlIP;
+}
+
+// Connect
+connectBtn.addEventListener('click', connect);
+ipInput.addEventListener('keydown', e => { if(e.key==='Enter') connect(); });
+
+function connect() {
+  const ip = ipInput.value.trim() || 'localhost';
+  const url = `ws://${ip}:3000`;
+  statusEl.className = 'status';
+  statusEl.textContent = '连接中...';
+  connectBtn.disabled = true;
+
+  try { if(ws) ws.close(); } catch(e){}
+
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    statusEl.textContent = '已连接，等待对手...';
+    statusEl.className = 'status ok';
+  };
+
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    handleMessage(msg);
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = '连接断开';
+    statusEl.className = 'status err';
+    connectBtn.disabled = false;
+    if(gameUI.classList.contains('show')) {
+      showLobby();
+    }
+  };
+
+  ws.onerror = () => {
+    statusEl.textContent = '无法连接服务器，请检查 IP 和端口';
+    statusEl.className = 'status err';
+    connectBtn.disabled = false;
+  };
+}
+
+function handleMessage(msg) {
+  switch(msg.type) {
+    case 'welcome':
+      mySlot = msg.slot;
+      obstacles = msg.obstacles || [];
+      statusEl.textContent = `你是 🔵P${mySlot}，等待对手加入...`;
+      updateSlotDots(msg.count || 1);
+      document.getElementById('p1name').textContent = mySlot===1 ? '🔵 YOU (P1)' : '🔵 P1 (对手)';
+      document.getElementById('p2name').textContent = mySlot===2 ? '🔴 YOU (P2)' : '🔴 P2 (对手)';
+      break;
+
+    case 'playerJoined':
+      updateSlotDots(msg.count);
+      if(msg.count >= 2) {
+        statusEl.textContent = '双方已就绪！点击开始';
+        statusEl.className = 'status ok';
+        // Auto-send start after a short delay
+        setTimeout(() => {
+          if(ws && ws.readyState===1) {
+            ws.send(JSON.stringify({type:'start'}));
+          }
+        }, 1000);
+      }
+      break;
+
+    case 'playerLeft':
+      updateSlotDots(msg.count);
+      statusEl.textContent = '对手断开连接，等待重连...';
+      statusEl.className = 'status err';
+      break;
+
+    case 'gameStart':
+      obstacles = msg.obstacles;
+      showGame();
+      break;
+
+    case 'state':
+      remoteState = msg;
+      lastTick = performance.now();
+      updateHUD(msg);
+      // Ping
+      if(pingStart) {
+        lastPing = performance.now() - pingStart;
+        pingEl.textContent = `${Math.round(lastPing)}ms`;
+      }
+      break;
+
+    case 'death':
+      const isWinner = msg.winner === mySlot;
+      showRoundMsg(isWinner ? '🎉 你赢了！' : '💀 你阵亡了！', isWinner ? '#66bb6a' : '#ef5350');
+      updateScores(msg.scores);
+      break;
+
+    case 'error':
+      statusEl.textContent = msg.msg;
+      statusEl.className = 'status err';
+      break;
+  }
+}
+
+function updateSlotDots(count) {
+  document.getElementById('dot1').className = 'dot ' + (count>=1?'on':'off');
+  document.getElementById('dot2').className = 'dot ' + (count>=2?'on':'off');
+}
+
+function showLobby() {
+  lobby.classList.remove('hidden');
+  gameUI.classList.remove('show');
+  connectBtn.disabled = false;
+}
+
+function showGame() {
+  lobby.classList.add('hidden');
+  gameUI.classList.add('show');
+}
+
+function showRoundMsg(text, color) {
+  roundMsg.textContent = text;
+  roundMsg.style.color = color;
+  roundMsg.classList.add('show');
+  if(roundMsgTimer) clearTimeout(roundMsgTimer);
+  roundMsgTimer = setTimeout(() => roundMsg.classList.remove('show'), 3000);
+}
+
+function updateHUD(s) {
+  document.getElementById('hp1').style.width = Math.max(0, s.t1.hp) + '%';
+  document.getElementById('hp2').style.width = Math.max(0, s.t2.hp) + '%';
+}
+
+function updateScores(scores) {
+  document.getElementById('score1').textContent = scores[0];
+  document.getElementById('score2').textContent = scores[1];
+}
+
+// ============ LAN DISCOVERY ============
+const scanBtn = document.getElementById('scanBtn');
+const serverList = document.getElementById('serverList');
+const serverItems = document.getElementById('serverItems');
+let foundServers = new Map();
+let scanning = false;
+
+scanBtn.addEventListener('click', scanLAN);
+
+async function scanLAN() {
+  if (scanning) return;
+  scanning = true;
+  scanBtn.disabled = true;
+  scanBtn.textContent = '🔍 扫描中...';
+  foundServers.clear();
+  serverItems.innerHTML = '';
+  serverList.style.display = 'block';
+
+  // Determine local subnet
+  const myIP = location.hostname || '127.0.0.1';
+  let subnet = '192.168.1';
+  const parts = myIP.split('.');
+  if (parts.length === 4) subnet = parts.slice(0, 3).join('.');
+
+  // Also try common subnets
+  const subnets = [subnet];
+  if (subnet !== '192.168.1') subnets.push('192.168.1');
+  if (subnet !== '192.168.0') subnets.push('192.168.0');
+
+  let scanned = 0;
+  const totalHosts = subnets.length * 254;
+  const progressEl = document.createElement('div');
+  progressEl.className = 'scan-progress';
+  progressEl.textContent = `正在扫描 ${subnets.join(', ')} 子网...`;
+  serverItems.appendChild(progressEl);
+
+  const scanIP = async (ip) => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 600);
+      const resp = await fetch(`http://${ip}:3002/discover`, {
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      clearTimeout(timer);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.type === 'tankworld-server') {
+          foundServers.set(ip, data);
+          addServerItem(data);
+        }
+      }
+    } catch(e) {}
+    scanned++;
+    progressEl.textContent = `扫描中... ${scanned}/${totalHosts}`;
+  };
+
+  // Scan all subnets in parallel batches
+  const batchSize = 50;
+  for (const sub of subnets) {
+    for (let i = 1; i <= 254; i += batchSize) {
+      const batch = [];
+      for (let j = i; j < Math.min(i + batchSize, 255); j++) {
+        batch.push(scanIP(`${sub}.${j}`));
+      }
+      await Promise.all(batch);
+    }
+  }
+
+  progressEl.remove();
+  if (foundServers.size === 0) {
+    serverItems.innerHTML = '<div style="color:rgba(255,255,255,0.3);font-size:13px;padding:10px;">未发现服务器，请确认服务器已启动且在同一局域网</div>';
+  }
+  scanning = false;
+  scanBtn.disabled = false;
+  scanBtn.textContent = '🔍 扫描局域网服务器';
+}
+
+function addServerItem(data) {
+  const item = document.createElement('div');
+  item.className = 'server-item';
+  const isFull = data.players >= data.maxPlayers;
+  item.innerHTML = `
+    <div>
+      <div class="srv-ip">${data.ip}:${data.port}</div>
+      <div class="srv-info">玩家: ${data.players}/${data.maxPlayers}</div>
+    </div>
+    <span class="srv-status ${isFull ? 'full' : 'available'}">${isFull ? '已满' : '可加入'}</span>
+  `;
+  if (!isFull) {
+    item.dataset.serverIp = data.ip;
+    item.style.cursor = 'pointer';
+  } else {
+    item.style.opacity = '0.5';
+    item.style.cursor = 'default';
+  }
+  serverItems.appendChild(item);
+}
+
+serverItems.addEventListener('click', (e) => {
+  const item = e.target.closest('.server-item');
+  if (item && item.dataset.serverIp) {
+    ipInput.value = item.dataset.serverIp;
+    connect();
+  }
+});
+
+// Auto-discover on LAN access
+if (location.hostname && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+  setTimeout(() => scanLAN(), 500);
+}
+
+// ============ INPUT ============
+document.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase()) || e.key===' ') {
+    e.preventDefault();
+  }
+  if(e.key.toLowerCase()==='r' && ws && ws.readyState===1) {
+    ws.send(JSON.stringify({type:'restart'}));
+    showRoundMsg('🔄 重新开始', '#fff');
+  }
+});
+document.addEventListener('keyup', e => { keys[e.key.toLowerCase()]=false; });
+
+function getInput() {
+  return {
+    up: !!keys['w'],
+    down: !!keys['s'],
+    left: !!keys['a'],
+    right: !!keys['d'],
+    shoot: !!keys[' '],
+  };
+}
+
+function sendInput() {
+  if(!ws || ws.readyState!==1 || !remoteState) return;
+  const now = performance.now();
+  if(now - lastInputSend < 16) return; // ~60fps
+  lastInputSend = now;
+  pingStart = now;
+  ws.send(JSON.stringify({ type:'input', keys: getInput() }));
+}
+
+// ============ RENDERING ============
+function lerp(a, b, t) { return a + (b - a) * Math.min(1, Math.max(0, t)); }
+
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.025)';
+  ctx.lineWidth = 1;
+  for(let x=0;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=0;y<H;y+=40){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+}
+
+function drawObstacles() {
+  ctx.fillStyle = '#1a1f2e';
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1.5;
+  for(const o of obstacles) {
+    ctx.beginPath();
+    ctx.roundRect(o.x, o.y, o.w, o.h, 4);
+    ctx.fill(); ctx.stroke();
+    // Texture lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+    ctx.beginPath();
+    ctx.moveTo(o.x+o.w*0.3, o.y);
+    ctx.lineTo(o.x+o.w*0.4, o.y+o.h);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(o.x, o.y+o.h*0.6);
+    ctx.lineTo(o.x+o.w, o.y+o.h*0.5);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  }
+}
+
+function drawTank(t, color, colorLight, isMe) {
+  if(!t.alive) return;
+  ctx.save();
+  ctx.translate(t.x, t.y);
+  ctx.rotate(t.a);
+
+  // Glow for own tank
+  if(isMe) {
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = colorLight;
+  }
+
+  // Body shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(-16, -13, 32, 26);
+
+  // Body
+  const grad = ctx.createLinearGradient(-16,0,16,0);
+  grad.addColorStop(0, color);
+  grad.addColorStop(1, colorLight);
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.roundRect(-16, -12, 32, 24, 4); ctx.fill();
+  ctx.shadowBlur = 0;
+
+  // Treads
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(-18, -14, 36, 4);
+  ctx.fillRect(-18, 10, 36, 4);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  for(let i=-16;i<16;i+=6){
+    ctx.beginPath();ctx.moveTo(i,-14);ctx.lineTo(i,-10);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(i,10);ctx.lineTo(i,14);ctx.stroke();
+  }
+
+  // Turret
+  const tGrad = ctx.createRadialGradient(-2,-2,0,0,0,10);
+  tGrad.addColorStop(0, colorLight);
+  tGrad.addColorStop(1, color);
+  ctx.fillStyle = tGrad;
+  ctx.beginPath(); ctx.arc(0,0,9,0,Math.PI*2); ctx.fill();
+
+  // Barrel
+  const bGrad = ctx.createLinearGradient(8,0,30,0);
+  bGrad.addColorStop(0, colorLight);
+  bGrad.addColorStop(1, 'rgba(255,255,255,0.3)');
+  ctx.fillStyle = bGrad;
+  ctx.fillRect(8, -3, 20, 6);
+
+  // HP bar
+  ctx.rotate(-t.a);
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(-16, -26, 32, 5);
+  ctx.fillStyle = t.hp > 30 ? colorLight : '#f44336';
+  ctx.fillRect(-16, -26, 32 * (t.hp/100), 5);
+
+  // Name tag
+  ctx.font = 'bold 9px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillText(isMe ? 'YOU' : 'ENEMY', 0, -32);
+
+  ctx.restore();
+}
+
+function drawBullets(bullets) {
+  for(const b of bullets) {
+    ctx.save();
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = b.o===1 ? '#4fc3f7' : '#ff7043';
+    ctx.beginPath(); ctx.arc(b.x, b.y, 3.5, 0, Math.PI*2);
+    ctx.fillStyle = b.o===1 ? '#4fc3f7' : '#ff7043'; ctx.fill();
+    ctx.beginPath(); ctx.arc(b.x, b.y, 1.5, 0, Math.PI*2);
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.restore();
+  }
+}
+
+function spawnHitParticles(x, y, color) {
+  for(let i=0;i<8;i++){
+    const a = Math.random()*Math.PI*2;
+    const s = 1+Math.random()*3;
+    particles.push({
+      x, y, dx:Math.cos(a)*s, dy:Math.sin(a)*s,
+      life:15+Math.random()*10, max:25, r:1.5+Math.random()*2, color
+    });
+  }
+}
+
+function updateParticles() {
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x+=p.dx; p.y+=p.dy; p.dx*=0.95; p.dy*=0.95; p.life--;
+    if(p.life<=0){particles.splice(i,1);continue;}
+    ctx.globalAlpha = p.life/p.max;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r*(p.life/p.max),0,Math.PI*2);
+    ctx.fillStyle = p.color; ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Track previous state for hit detection (visual only)
+let prevState = null;
+
+// ============ MAIN LOOP ============
+function gameLoop() {
+  requestAnimationFrame(gameLoop);
+
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0,0,W,H);
+  drawGrid();
+  drawObstacles();
+
+  if(!remoteState) return;
+
+  // Interpolation
+  const t = Math.min(1, (performance.now() - lastTick) / (1000/60));
+  const s = remoteState;
+  const t1 = s.t1, t2 = s.t2;
+
+  // Hit particles (visual feedback)
+  if(prevState) {
+    if(prevState.t1.hp > t1.hp) spawnHitParticles(t1.x, t1.y, '#4fc3f7');
+    if(prevState.t2.hp > t2.hp) spawnHitParticles(t2.x, t2.y, '#ff7043');
+    if(prevState.t1.alive && !t1.alive) {
+      for(let i=0;i<30;i++){
+        const a=Math.random()*Math.PI*2, sp=1+Math.random()*5;
+        particles.push({x:t1.x,y:t1.y,dx:Math.cos(a)*sp,dy:Math.sin(a)*sp,
+          life:30+Math.random()*20,max:50,r:2+Math.random()*3,color:'#4fc3f7'});
+      }
+    }
+    if(prevState.t2.alive && !t2.alive) {
+      for(let i=0;i<30;i++){
+        const a=Math.random()*Math.PI*2, sp=1+Math.random()*5;
+        particles.push({x:t2.x,y:t2.y,dx:Math.cos(a)*sp,dy:Math.sin(a)*sp,
+          life:30+Math.random()*20,max:50,r:2+Math.random()*3,color:'#ff7043'});
+      }
+    }
+  }
+  prevState = JSON.parse(JSON.stringify(s));
+
+  // Draw
+  drawBullets(s.bullets);
+  drawTank(t1, '#1565c0', '#4fc3f7', mySlot===1);
+  drawTank(t2, '#bf360c', '#ff7043', mySlot===2);
+  updateParticles();
+
+  // VS
+  ctx.globalAlpha = 0.04;
+  ctx.font = 'bold 70px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('VS', W/2, H/2+22);
+  ctx.globalAlpha = 1;
+
+  // Send input
+  sendInput();
+}
+
+gameLoop();
+</script>
+</body>
+</html>
